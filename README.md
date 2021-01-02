@@ -1,4 +1,4 @@
-# Cancertypes
+# Cancer Gene Expression
 Data downloaded from https://web.stanford.edu/~hastie/ElemStatLearn/data.html, 1/2/2021
 
 
