@@ -1,0 +1,496 @@
+---
+title: "Cancer Classification using Gene Expression Data"
+subtitle: 'HarvardX Data Science: Capstone'
+author: "Skyler Shapiro"
+date: "1/8/2021"
+output: 
+  pdf_document: 
+    highlight: tango
+    keep_tex: yes
+    toc: yes
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.table.format = "latex")
+```
+
+```{r include=FALSE}
+############################################################################
+############################################################################
+###                                                                      ###
+###                  SECTION 0: LOAD REQUIRED LIBRARIES                  ###
+###                                                                      ###
+############################################################################
+############################################################################
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(nnet)) install.packages("nnet")
+if(!require(knitr)) install.packages("knitr")
+if(!require(rpart)) install.packages("rpart")
+if(!require(rpart.plot)) install.packages("rpart.plot")
+if(!require(kableExtra)) install.packages("kableExtra")
+library(tidyverse)
+library(caret)
+library(data.table)
+library(lubridate)
+library(bannerCommenter)
+library(nnet)
+library(knitr)
+library(rpart)
+library(rpart.plot)
+```
+
+# 1. Introduction 
+## 1.1 Project Overview
+
+This is the second and final project of the capstone of the Data Science Professional Certificate program offered by HarvardX. The certificate program is comprised of nine courses, with the first 8 covering topics from basic R programming to probability to machine learning techniques. The 9th and final course is the capstone, which is contains a movie recommender system and an independent project.
+
+The goal of this project is to classify cancer type using gene expression data. To achieve this goal, I implemented techniques including dimension reduction by Principal Components Analysis, random partitioning of data, and three machine learning multinomial classification algorithms.
+
+## 1.2 Data
+
+This dataset contains gene expression data for 198 human patients, all of whom have one of 14 types of cancer: breast, prostate, lung, colorectal, lymphoma, bladder, melanoma, uterus, leukemia, renal, pancreas, ovary, meso and cns. The patients are split across two groups, training (144) and testing (54). The data is broken up into four files: "14cancer.xtrain.txt" and "14cancer.ytrain.txt", and "14cancer.xtest.txt" and "14cancer.ytest.txt". The matrices "14cancer.xtrain.txt" [16,063 x 144] and "14cancer.xtest.txt" [16,063 x 54] contain gene-expression data. The lists "14cancer.ytrain.txt" and "14cancer.ytest.txt" contain the cancer type labels of each subject. The contents of the data, are quantitative continuous with 14 categorical outcomes. All four data files were pre-cleaned, having no empty cells or NA values.
+
+This data was created by S. Ramaswamy, P.  Tamayo, R. Rifkin, S. Mukherjee, C.H. Yeang, M. Angelo, C. Ladd, M. Reich, E. Latulippe, J.P. Mesirov, T. Poggio, W. Gerald, M.Loda, E.S. Lander, T.R. Golub (2001) (https://www.pnas.org/content/98/26/15149). In their paper they used a multiclass classifier based on a support vector machine algorithm and achieved a prediction accuracy of 0.780.
+
+The data was downloaded from (https://web.stanford.edu/~hastie/ElemStatLearn/) and is also available to download on the GitHub.com project repository (https://github.com/skylershapiro/Cancer_Gene_Expression).
+
+
+## 1.3 Algorithms
+
+The three algorithms selected for this project were K-Nearest Neighbors, Random Forest, and Multinomial Logistic Regression. These algorithms were picked mainly because of their capacity to handle multinomial classification tasks. 
+
+### 1.3.1 K - Nearest Neighbors, KNN
+
+K-Nearest Neighbors, or KNN is a model that classifies data points based on the points that are most similar to it. It uses test data to predict classification for unclassified points. We can also specify the number of similar points, or "neighbors" to consider when predicting to tune our model. Some of the benefits of KNN are its ease of use and low calculation time.
+
+### 1.3.2 Random Forest, RF
+
+Random Forests consist of a large number of individual decision trees that operate as an ensemble. 
+Each individual tree in the random forest spits out a class prediction and the class with the most votes becomes our model’s prediction. Some of the benefits of this model are that it can be used for both regression and classification tasks. Additionally, it is also easy to view the relative importance it assigns to the input features.
+
+### 1.3.3 Multinomial Logistic Regression, MLR
+
+Unlike standard logistic regression which can only handle binary classification tasks, Multinomial Logistic Regression is a form logistic regression that is well suited to handle multiclass classification tasks. 
+
+## 1.4 Accuracy Measurement
+
+In order to evaluate the performance of the models, it is important to establish a standard measure of accuracy. Unlike data with continuous outcomes, take movie ratings for example, we cannot use a loss function like Root Mean Squared Error to determine accuracy. Because our data has strictly categorical outcomes, the simplest way to measure accuracy is to to divide the number of correctly predicted cancer types over the total number of predictions. Using this calculation, dividing correct guesses by the total number of guesses, we will be able to evaluate and compare the models.
+
+
+# 2. Methods and Analysis
+## 2.1 Data Wrangling
+
+Although the data had already been split into testing and training files, I recombined all of the data files so I could create my own randomly generated training and testing sets. The two objects containing gene expression data, "xtrain" and "xtest" were bound together by column and then transposed to produce a [16,063 x 198] data frame. Each row of the data frame corresponds to a cancer patient, and each column corresponds to a different gene expression measurement. The cancer type labels were originally a vector of numbers, 1-14, that corresponded to a cancer type. To make my code more interpretable, I converted the numeric vector into a character vector of text labels,The raw data files can be accessed through the project repository on GitHub at (https://github.com/skylershapiro/Cancer_Gene_Expression). In the first table below, we can see the first five rows of our gene expression data, and in the next table we can view the cancer type labels.
+
+```{r eval=FALSE, echo=TRUE}
+# Download data files from github repo
+ytrain <- scan(
+"https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.ytrain.txt")
+xtrain <- read.table(
+"https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.xtrain.txt", 
+header=FALSE, sep="")
+
+ytest <- scan(
+"https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.ytest.txt")
+xtest <- read.table(
+"https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.xtest.txt", 
+header=FALSE, sep="")
+
+# Create cancer gene expression dataset from pre-made test and train sets
+cancer_gene_expression <- as.data.frame(t(cbind(xtrain, xtest)))
+rownames(cancer_gene_expression) <- 1:nrow(cancer_gene_expression)
+cancer_type_nums <- c(ytrain, ytest)
+```
+
+```{r include=FALSE}
+# Download data files from github repo
+ytrain <- scan("https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.ytrain.txt")
+xtrain <- read.table("https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.xtrain.txt", header=FALSE, sep="")
+ytest <- scan("https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.ytest.txt")
+xtest <- read.table("https://raw.github.com/skylershapiro/Cancer_Gene_Expression/master/14cancer.xtest.txt", header=FALSE, sep="")
+
+# Create cancer gene expression dataset from pre-made test and train sets
+cancer_gene_expression <- as.data.frame(t(cbind(xtrain, xtest)))
+rownames(cancer_gene_expression) <- 1:nrow(cancer_gene_expression)
+cancer_type_nums <- c(ytrain, ytest)
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+# Convert cancer types to factor with two levels: the number identifier (1-14) and the text label 
+cancer_names <- c("breast", "prostate", "lung", "colorectal", "lymphoma", "bladder", "melanoma", "uterus", "leukemia", "renal", "pancreas", "ovary", "meso", "cns")
+cancer_types <- factor(cancer_type_nums, levels = c(1:14), labels = cancer_names)
+```
+
+```{r echo=FALSE, message=FALSE}
+heads <- cancer_gene_expression[,1:10]
+
+head(heads,5) %>% kable(caption = "First 5 Rows and 10 Columns of cancer_gene_expression data set", row.names = TRUE, format = "simple")
+```
+
+```{r echo=FALSE}
+number_label <- c(1:14)
+text_label <- levels(cancer_types)
+t(rbind(number_label,text_label)) %>% 
+  kable(caption = "Table of Number and Text Labels of Cancer Types", format = "latex")
+```
+
+
+## 2.2 Principal Components Analysis (PCA) for Dimension Reduction
+
+Using Principal Components Analysis, we can transform a large set of variables into a smaller one that still contains most of the information in the large set. This dataset has an extremely large number of predictors (16,063). Using PCA will allow us to reduce the dimensions of our data to shorten code runtime, scale down the size of our computation, and improve model accuracy. The function "prcomp()" was used to calculate the principal components. 
+
+```{r include=TRUE}
+# Calculate principal components
+pc <- prcomp(cancer_gene_expression)
+X <- pc$x
+```
+
+## 2.3 Create Data Partition
+
+Using the R function "createDataPartition()" the PCA matrix was split into testing and training sets. I chose the training-testing split to be 80/20 to ensure that there each cancer type would be represented in both sets.
+
+```{r include=FALSE}
+pc <- prcomp(cancer_gene_expression)
+X <- pc$x
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+
+# Create testing index
+test_index <- createDataPartition(y = cancer_types,
+                                  times = 1, p = 0.2, list = FALSE)
+
+# Partition matrix of principal components using test index
+pc_test <- X[test_index,]
+pc_train <- X[-test_index,]
+
+# Partition cancer type labels using test index
+ctype_test <- cancer_types[test_index]
+ctype_train <- cancer_types[-test_index]
+```
+
+## 2.4 Data Exploration
+
+From the tables below, we can see the distribution of cancer type accross the full dataset as well as the testing and training sets. We can see that there are a few of each cancer type in the testing and training sets. Our 80/20 partition ended up working well, allowing for two representative sets.
+
+```{r echo=FALSE, warning=FALSE}
+
+sort(summary(cancer_types),decreasing = TRUE) %>%
+  kable(caption = "Frequency of Cancer Type from Full Dataset",col.names = "Count")
+```
+
+```{r echo=FALSE, warning=FALSE}
+# Table of distribution of cancer types in training set
+t1 <- sort(summary(ctype_train), decreasing = TRUE) %>% 
+  kable(caption = "Frequency of Cancer Type in Training Set", col.names = "Count",format = "latex")
+t1
+```
+
+```{r echo=FALSE, warning=FALSE}
+# Table of distribution of cancer types in testing set
+t2 <- sort(summary(ctype_test), decreasing = TRUE) %>% 
+  kable(caption = "Frequency of Cancer Type in Training Set", col.names= "Count",format = "latex")
+t2
+```
+
+Now, lets inspect the results of our dimension reduction using PCA. We started off with over 16,000 variables, which makes building working models challenging on a standard computer. In the plot below, we can visualize the cumulative proportion of variation explained by the number of principal components. The Blue lines mark the 80% variation explained which corresponds to the first 15 principal components. Red lines mark the 90% variation explained which corresponds to the first 37 principal components. From the table below, we can see the cumulative variation explained by principal components.
+
+```{r echo=FALSE}
+var_explained <- cumsum(pc$sdev^2/sum(pc$sdev^2))
+plot(var_explained, ylim = c(0,1),
+     xlab = "Number of Principal Components", 
+     ylab = "Cumulative Variation Explained", main = "Cumulative Proportion of Variation Explained")
+abline(h=var_explained[37],col='red',v=37)
+abline(h=var_explained[15],col='blue',v=15)
+```
+\newpage
+```{r echo=FALSE, message=FALSE}
+# Table of cumulative percent of variation explained
+var_explained <- cumsum(pc$sdev^2/sum(pc$sdev^2))
+inds <- c(1,2,3,5,10,15,20,30,37)
+temp <- paste(inds, "Principal Components")
+var_explained_labels <- paste("First",temp)
+var_pcs <- data.frame(number_pcs = var_explained_labels, variation_explained = var_explained[inds], 
+            stringsAsFactors = FALSE)
+var_pcs$number_pcs[1] = "First Principal Component" 
+var_pcs %>% kable(caption = "Cumulative Variation Explained by Principal Components"
+    ,format = "latex")
+```
+
+
+Now, we can view the distribution in the first scatterplot below of the first princial component versus the second principal component grouped by cancer type. Although we can see clusters of cns and leukemia, the distrubution doesn't seem to have a clear pattern. In the second plot, we can clearly see the distribution of the first and second principal compoments faceted by cancer type.
+
+```{r echo=FALSE}
+# Plot of first 2 principal components
+data.frame(pc_1 = X[,1], pc_2 = X[,2], cancer = cancer_types) %>%
+  ggplot(aes(pc_1, pc_2, col = cancer)) +
+  geom_point()  +
+  ggtitle("Principal Component 1 versus Principal Component 2 Colored by Cancer Type")
+```
+```{r echo=FALSE}
+# pc1 pc2 faceted plot by cancer type
+data.frame(pc_1 = pc$x[,1], pc_2 = pc$x[,2], cancer = cancer_types) %>%
+  ggplot(aes(pc_1, pc_2,col=cancer)) +
+  geom_point() +
+  stat_ellipse() +
+  facet_grid(cols=vars(cancer)) +
+  theme(axis.text.x = element_text(angle = 60, size = 4), strip.text = element_text(size= 4.2,face = "bold")) +
+  ggtitle("Principal Component 1 versus Principal Component 2 Faceted by Cancer Type")
+```
+
+## 2.5 Model Construction
+
+### 2.5.1 Data Wrangling for Model Construction
+
+Now that the data has been explored and the dimension of our data has been reduced, we can prepare to construct our models. Earlier, we stated that we would be using the first 37 principal components to build our models as well as the first 15 components to compare later. We follow an identical procedure for the testing and training sets using the first 15 principal components as well.
+
+```{r echo=TRUE}
+# (TRAIN SET) Bind principal components matrix with cancer type labels
+newdat_train <- cbind(pc_train[,1:37], ctype_train)
+# Coerce class off training set to dataframe
+temp <- as.data.frame(newdat_train)
+newdat_train <- temp
+# Re-attach cancer type labels to switch from numeric labels to text labels
+# (for example changing "1" to "breast")
+newdat_train$ctype_train <- ctype_train
+
+# (TEST SET) Bind principal components matrix with cancer type labels
+newdat_test <- cbind(pc_test[,1:37], ctype_test)
+# Coerce class off training set to dataframe
+temp <- as.data.frame(newdat_test)
+newdat_test <- temp
+# Re-attach cancer type labels to switch from numeric labels to text labels
+# (for example changing "1" to "breast")
+newdat_test$ctype_test <- ctype_test
+```
+
+
+```{r include=FALSE}
+# Wrangle data using only 15 principal components for training set
+fift_newdat_train <- cbind(pc_train[,1:15], ctype_train)
+temp <- as.data.frame(fift_newdat_train)
+fift_newdat_train <- temp
+fift_newdat_train$ctype_train <- ctype_train
+# Wrangle data using only 15 components for testing set
+fift_newdat_test <- cbind(pc_test[,1:15], ctype_test)
+temp <- as.data.frame(fift_newdat_test)
+fift_newdat_test <- temp
+fift_newdat_test$ctype_test <- ctype_test
+
+```
+
+
+### 2.5.2 Model 1: K - Nearest Neighbors, KNN
+
+The first model used was K-Nearest Neighbors. The "train()" function and method argument "knn" from the Caret package was used to construct the model. One of the benefits of using the Caret package for model construction is the built-in tuning arguments. The "trControl" method was implemented for 10-fold, cross validation. The "tuneGrid" argument trains a new model for every k-value stored in the argument and stores it in the "train_knn" object making optimization very easy. From the line plot below we can see a plot of K-values versus model accuracy and that a k value of 1 yields the most accurate model in this case. We can also print out the optimal k-value using the bestTune component of our 37 principal component model. 
+
+```{r warning=FALSE}
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+# Build KNN model
+control <- trainControl(method = "cv", number = 10, p = .9)
+train_knn <- train(ctype_train ~ ., method = "knn", 
+                      data = newdat_train,
+                      tuneGrid = data.frame(k = seq(1, 50, 2)),
+                      trControl = control)
+```
+
+```{r echo=FALSE}
+# Plot k values
+ggplot(train_knn,highlight = TRUE) #+ 
+  ggtitle( "K-values versus Model Accuracy")
+```
+
+```{r echo=TRUE}
+# Choose optimal k
+k = train_knn$bestTune
+k
+```
+
+Next we can evaluate the model using the test set and calculate its accuracy using the "ConfusionMatrix()" function. The exact same procedure was followed for the 15 principal component model.
+
+```{r}
+# Predict on test set
+y_hat_knn <- predict(train_knn, newdat_test, type = "raw")
+
+# Check final accuracy
+knn_test_acc <- confusionMatrix(data = y_hat_knn, reference = ctype_test)$overall["Accuracy"]
+```
+```{r include=FALSE}
+# Accuracy on train set using optimal k-value
+knn_train_acc <- max(train_knn$results$Accuracy)
+knn_test_acc <- confusionMatrix(data = y_hat_knn, reference = ctype_test)$overall["Accuracy"]
+
+# Add to table of train and test accuracy
+tab_knn <- data.frame(Method="KNN", train_accuracy=knn_train_acc, test_accuracy=knn_test_acc)
+```
+
+```{r include=FALSE, warning=FALSE}
+##****************************************************************
+##               KNN with 15 principal components               **
+##****************************************************************
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+# Build model
+control <- trainControl(method = "cv", number = 10, p = .9)
+train_knn <- train(ctype_train ~ ., method = "knn", 
+                   data = fift_newdat_train,
+                   tuneGrid = data.frame(k = seq(1, 50, 2)),
+                   trControl = control)
+
+# Predict on test set
+y_hat_knn <- predict(train_knn, fift_newdat_test, type = "raw")
+
+# Check final accuracy
+fift_knn_test_acc <- confusionMatrix(data = y_hat_knn, reference = ctype_test)$overall["Accuracy"]
+
+# Add results to table
+model_results <- data_frame(Method = "1: K - Nearest Neighbors (KNN)", 
+                            Accuracy_37_principal_components = knn_test_acc, 
+                            Accuracy_15_principal_components = fift_knn_test_acc)
+```
+
+
+### 2.5.3 Model 2: Random Forest, RF
+
+The second model was chosen was Random Forest or RF for short. The "train()" function and method argument "Rborist" from the Rborist package was used to construct the model. The Rborist package provides additional arguments for optimization such as "predFixed", which modifies the number of randomly selected predictors, and "minNode",which modifies minimal node size. Before constructing our actual model, a simpler random forest model was trained unsing the "rpart" package in order to produce an example plot, seen below for the 37 principal component model. The exact same procedure was followed for the 15 principal component model.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+fit <- rpart(ctype_train ~ ., data = newdat_train)
+rpart.plot(fit,fallen.leaves = FALSE, main="Decision Tree from 'rpart' Random Forest")
+```
+
+```{r echo=TRUE, warning=FALSE}
+# Build rf model using Rborist package
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3)
+train_rf <- train(ctype_train ~ .,
+                    method = "Rborist",
+                    tuneGrid = data.frame(predFixed = 2, minNode = c(3, 50)),
+                    data = newdat_train,
+                    trControl=control)
+
+# Evaluate model accuracy on test set
+rf_acc <- as.numeric(confusionMatrix(predict(train_rf, newdat_test), ctype_test)$overall["Accuracy"])
+```
+
+```{r include=FALSE, warning=FALSE}
+##****************************************************************
+##               rf with 15 principal components                **
+##****************************************************************
+
+# Build rf model using Rborist package
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+fift_train_rf <- train(ctype_train ~ .,
+                  method = "Rborist",
+                  tuneGrid = data.frame(predFixed = 2, minNode = c(3, 50)),
+                  data = fift_newdat_train)
+
+
+# Model Accuracy
+fift_rf_acc <- as.numeric(confusionMatrix(predict(fift_train_rf, fift_newdat_test), ctype_test)$overall["Accuracy"])
+
+# Add results to table
+model_results <- bind_rows(model_results,
+                        data_frame(Method = "2: Random Forest (RF)",
+                        Accuracy_37_principal_components = rf_acc,
+                         Accuracy_15_principal_components=fift_rf_acc))
+```
+
+### 2.5.4 Model 3: Multinomial Logistic Regression, MLR
+
+The third and final model chosen was Multinomial Logistic Regression or MLR. MLR is a form of logistic regression that deals with multi-class categorical outcomes instead of binary outcomes (only two classes). The following code is for the 37 principal component model.
+
+```{r eval=FALSE,warning=FALSE}
+# Create reference
+newdat_train$ctype_train <- relevel(newdat_train$ctype_train, ref = "breast")
+
+# Build model with newly made reference
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+train_multi_log <- multinom(ctype_train ~ ., data = newdat_train)
+
+```
+```{r include=FALSE}
+# Create reference
+newdat_train$ctype_train <- relevel(newdat_train$ctype_train, ref = "breast")
+
+# Build model with newly made reference
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+train_multi_log <- multinom(ctype_train ~ ., data = newdat_train)
+
+```
+
+After training our model, we then evaluate it on the test set. The table below displays the actual cancer type (on the rows) and the predicted cancer type (on the columns) for the 37 principal component model. Finally, the model accuracy is computed on the test set using the table. The same process was followed for the 15 principal component model.
+
+```{r echo=TRUE}
+# Predicting the class for test dataset
+newdat_test$ctypepredicted <- predict(train_multi_log, newdata = newdat_test, "class")
+
+# Building classification table
+tab <- table(newdat_test$ctype_test, newdat_test$ctypepredicted)
+tab %>% 
+kable(caption = "Classification table of actual (rows) versus predicted (columns) cancer types", 
+        format = "latex") %>%
+  kable_styling(font_size = 5)
+
+# Compute final accuracy
+mlr_acc <- (round((sum(diag(tab))/sum(tab))*100,2))/100
+```
+
+```{r include=FALSE}
+# Create reference
+fift_newdat_train$ctype_train <- relevel(fift_newdat_train$ctype_train, ref = "breast")
+
+# Build model with newly made reference
+set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+fift_train_multi_log <- multinom(ctype_train ~ ., data = fift_newdat_train)
+
+# Predicting the class for test dataset
+fift_newdat_test$ctypepredicted <- predict(fift_train_multi_log, newdata = fift_newdat_test, "class")
+
+# Building classification table
+fift_tab <- table(fift_newdat_test$ctype_test, fift_newdat_test$ctypepredicted)
+
+# Compute final accuracy
+fift_mlr_acc <- (round((sum(diag(fift_tab))/sum(fift_tab))*100,2))/100
+
+# Add to results table
+model_results <- bind_rows(model_results,
+                           data_frame(Method = "3: Multinomial Logistic Regression (MLR)",
+                                      Accuracy_37_principal_components=mlr_acc,
+                                      Accuracy_15_principal_components=fift_mlr_acc))
+```
+
+
+# 3. Results
+
+From the table below we can see that the Random Forest model using 37 principal components had the highest test accuracy at 0.782. The Random Forest model was the most accurate 15 principal component model as well with an accuracy of 0.717. The KNN 37 principal component model had the second highest accuracy at 0.586 but the lowest accuracy out of the 15 principal component models. The MLR model had the lowest 37 principal model accuracy and the lowest overall accuracy at 0.456. For unknown reasons, 15 principal component MLR model was more accurate than the 37 principal component MLR model.
+
+```{r echo=FALSE, warning=FALSE,message=FALSE}
+model_results %>% kable(caption = "Model Accuracy using 15 and 37 Principal Components", format = "latex", col.names = c("Method", "37_pcs_accuracy", "15_pcs_accuracy")) 
+```
+
+# 4. Conclusion
+## 4.1 Project Summary
+
+The goal of this project was to classify a patients cancer type given gene expression data. Using Principal components analysis for dimension reduction, randomly partitioning data into training and testing sets, and constructing three machine learning algorithms, I was able to achieve an accuracy proportion of 0.782 using the 37 principal component Random Forest model. This was the same level of accuracy as the creators of this dataset who used a multiclass classifier based on a support vector machine algorithm. (Study reference can be found on the github project repository README file)
+
+## 4.2 Limitations 
+
+A limitation of this project was the small sample size. Because there were only 198 patients for 14 types of cancer, certain types of cancer were not very prevalent. Having a larger sample could possibly improve model accuracy. Another limitation of this project was the MLR model. For an unknown reason, the 37 principal component model performed worse than the 15 principal component model even though the 37 principal component model captured more of the variation in the data. It could be that MLR is better suited to handle fewer predictors, or perhaps MLR is better suited for classification tasks with fewer classes.
+
+## 4.3 Future Work
+
+One future direction for this project would be to use an ensembling method, making use of Random Forests, K-Nearest Neighbors, and Multinomial Logistic Regression together in one model which could improve accuracy. Further, more advanced methods like Support Vector Machine (SVM) and signal processing could be used to achieve better accuracy. 
+
